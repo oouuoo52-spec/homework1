@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生作業管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .spinner { animation: rotate 1.5s linear infinite; }
+        @keyframes rotate { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-slate-50 p-4 md:p-8 font-sans">
+
+<div x-data="studentSystem()" x-init="fetchData()" class="max-w-7xl mx-auto">
+    
+    <!-- 全域讀取遮罩 -->
+    <div x-show="isLoading" class="fixed inset-0 bg-white/80 z-50 flex flex-col items-center justify-center" x-cloak>
+        <div class="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full spinner mb-3"></div>
+        <p class="text-indigo-700 font-bold">同步雲端資料中...</p>
+    </div>
+
+    <!-- 頂部導覽列 -->
+    <div class="flex justify-between items-center mb-8 bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+        <div class="flex items-center gap-3">
+            <!-- 已移除 PRO 標籤 -->
+            <h1 class="text-xl font-black text-slate-800 tracking-tighter" x-text="currentMode === 'admin' ? '後臺模式' : '學生作業管理系統'"></h1>
+            <span x-show="currentMode === 'admin'" class="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-widest animate-pulse">Admin Active</span>
+        </div>
+        
+        <div class="flex gap-2">
+            <button x-show="currentMode === 'exhibition'" @click="enterAdmin" class="bg-slate-800 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg hover:bg-slate-900 transition-all">
+                🔑 管理員登入
+            </button>
+            <button x-show="currentMode === 'admin'" @click="exitAdmin" class="bg-rose-100 text-rose-600 px-5 py-2.5 rounded-2xl text-xs font-black hover:bg-rose-200 transition-all">
+                🚪 退出後臺模式
+            </button>
+            <button @click="fetchData()" class="bg-slate-100 text-slate-500 px-3 py-2.5 rounded-2xl text-xs hover:bg-slate-200 transition">
+                🔄 刷新
+            </button>
+        </div>
+    </div>
+
+    <!-- ================= 後臺模式 (ADMIN) ================= -->
+    <template x-if="currentMode === 'admin'">
+        <div x-transition class="space-y-8">
+            
+            <h2 class="text-3xl font-black text-slate-800 border-l-8 border-indigo-600 pl-4">後臺管理中心</h2>
+
+            <div class="flex justify-end">
+                <button @click="showSettings = !showSettings" class="text-indigo-600 text-sm font-bold flex items-center gap-1">
+                    <span x-text="showSettings ? '✕ 關閉選單設定' : '⚙️ 設定選單項目 (科目/單元/作業項目)'"></span>
+                </button>
+            </div>
+
+            <!-- 系統設定區 -->
+            <div x-show="showSettings" x-transition x-cloak class="bg-white p-8 rounded-[2rem] shadow-xl mb-8 border-2 border-dashed border-indigo-100">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <template x-for="type in ['subjects', 'unitTopics', 'assignmentItems']" :key="type">
+                        <div class="space-y-3">
+                            <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]" x-text="type === 'subjects' ? '科目管理' : (type === 'unitTopics' ? '單元管理' : '作業項目管理')"></h3>
+                            <div class="flex gap-2">
+                                <input x-model="tempInputs[type]" type="text" class="border bg-slate-50 rounded-xl px-3 py-2 flex-1 text-sm outline-none focus:ring-2 focus:ring-indigo-400" placeholder="新增名稱">
+                                <button @click="addConfig(type)" class="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold">加</button>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="(val, i) in configs[type]" :key="i">
+                                    <span class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center shadow-sm">
+                                        <span x-text="val"></span>
+                                        <button @click="removeConfig(type, i)" class="ml-2 text-red-400 hover:text-red-600 font-bold">×</button>
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- 新增作業表單 -->
+            <div class="bg-white p-10 rounded-[3rem] shadow-2xl border border-white">
+                <h2 class="text-xs font-black text-slate-300 uppercase tracking-widest mb-6 italic">Record Student Progress</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <input x-model="newEntry.name" type="text" class="border-2 border-slate-50 bg-slate-50 rounded-2xl px-4 py-3 font-bold outline-none focus:border-indigo-500" placeholder="學生姓名">
+                    <select x-model="newEntry.subject" class="bg-slate-50 rounded-2xl px-4 py-3 font-bold outline-none border-2 border-slate-50">
+                        <option value="">選擇科目</option>
+                        <template x-for="s in configs.subjects" :key="s"><option :value="s" x-text="s"></option></template>
+                    </select>
+                    <select x-model="newEntry.unitTopic" class="bg-slate-50 rounded-2xl px-4 py-3 font-bold outline-none border-2 border-slate-50">
+                        <option value="">選擇單元</option>
+                        <template x-for="u in configs.unitTopics" :key="u"><option :value="u" x-text="u"></option></template>
+                    </select>
+                    <select x-model="newEntry.item" class="bg-slate-50 rounded-2xl px-4 py-3 font-bold outline-none border-2 border-slate-50">
+                        <option value="">選擇項目</option>
+                        <template x-for="it in configs.assignmentItems" :key="it"><option :value="it" x-text="it"></option></template>
+                    </select>
+                    <button @click="sendData('add')" class="bg-indigo-600 text-white font-black rounded-2xl py-3 shadow-lg shadow-indigo-100 hover:scale-105 transition-transform">登記作業</button>
+                </div>
+                <input x-model="newEntry.remark" type="text" class="w-full mt-4 border-2 border-slate-50 bg-slate-50 rounded-2xl px-4 py-3 outline-none focus:bg-white" placeholder="輸入備註...">
+            </div>
+
+            <!-- 後台管理列表 -->
+            <div class="space-y-4">
+                <template x-for="(student, sName) in groupedStudents" :key="sName">
+                    <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                        <button @click="toggleStudent(sName)" class="w-full px-10 py-6 flex justify-between items-center hover:bg-slate-50 transition">
+                            <span class="text-xl font-black text-slate-800" x-text="sName"></span>
+                            <span class="text-slate-300 font-bold" x-text="expandedNames.includes(sName) ? '收起管理' : '展開作業項目'"></span>
+                        </button>
+                        <div x-show="expandedNames.includes(sName)" class="p-6 bg-slate-50 border-t overflow-x-auto">
+                            <table class="w-full text-sm bg-white rounded-3xl shadow-inner border border-slate-100">
+                                <thead class="bg-slate-800 text-white text-[10px] uppercase font-black tracking-widest">
+                                    <tr>
+                                        <th class="p-5 text-left">科目</th><th class="p-5 text-left">單元</th><th class="p-5 text-left">項目</th><th class="p-5 text-left">狀態</th><th class="p-5 text-left">備註</th><th class="p-5 text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-50">
+                                    <template x-for="record in student.records" :key="record.id">
+                                        <tr class="hover:bg-indigo-50/50 transition">
+                                            <td class="p-5 font-bold text-slate-700" x-text="record.subject"></td>
+                                            <td class="p-5 text-slate-500" x-text="record.unit"></td>
+                                            <td class="p-5 text-slate-500 font-bold" x-text="record.item"></td>
+                                            <td class="p-5">
+                                                <select x-model="record.status" @change="sendData('update', record)" :class="getStatusClass(record.status)" class="bg-transparent font-black outline-none cursor-pointer">
+                                                    <template x-for="st in statusOptions" :key="st"><option :value="st" x-text="st" class="text-black font-normal"></option></template>
+                                                </select>
+                                            </td>
+                                            <td class="p-5"><input x-model="record.remark" @blur="sendData('update', record)" class="w-full bg-transparent border-b border-transparent focus:border-indigo-400 outline-none italic text-slate-800 font-bold"></td>
+                                            <td class="p-5 text-center"><button @click="confirmDelete(record)" class="text-red-300 hover:text-red-600 font-bold text-xl transition-colors">×</button></td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- ================= 展示模式 (EXHIBITION) ================= -->
+    <template x-if="currentMode === 'exhibition'">
+        <div x-transition class="max-w-4xl mx-auto py-16">
+            <div class="text-center mb-12">
+                <h2 class="text-5xl font-black text-slate-800 mb-4 tracking-tighter">作業進度查詢</h2>
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-xs">請輸入學生完整姓名後點擊搜尋</p>
+            </div>
+
+            <!-- 搜尋框 -->
+            <div class="relative max-w-lg mx-auto mb-20 group">
+                <input x-model="searchName" 
+                       @keydown.enter="performSearch"
+                       type="text" 
+                       class="w-full px-10 py-6 pr-36 rounded-[2.5rem] shadow-2xl border-none text-2xl font-black focus:ring-8 focus:ring-indigo-100 outline-none transition-all placeholder-slate-200" 
+                       placeholder="學生姓名...">
+                
+                <button @click="performSearch" 
+                        class="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 text-white px-6 py-4 rounded-3xl font-black shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-2">
+                    搜尋 🔍
+                </button>
+            </div>
+
+            <!-- 展示卡片區域 -->
+            <div class="space-y-6">
+                <!-- 若搜尋過且沒資料 -->
+                <template x-if="hasSearched && filteredResults.length === 0">
+                    <div class="bg-white rounded-[2rem] p-10 text-center shadow-lg border-2 border-dashed border-slate-200">
+                        <p class="text-slate-300 text-xl font-bold italic">查無「<span x-text="lastSearchName"></span>」的相關進度資料。</p>
+                        <p class="text-slate-400 text-sm mt-2">請確認姓名輸入是否正確，或連繫老師確認。</p>
+                    </div>
+                </template>
+
+                <!-- 搜尋結果顯示 -->
+                <template x-for="record in filteredResults" :key="record.id">
+                    <div class="bg-white rounded-[2.5rem] p-8 shadow-xl border-l-[12px] hover:translate-x-2 transition-all duration-300" :class="getStatusBorder(record.status)">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-[10px] font-black px-3 py-1 bg-slate-800 text-white rounded-lg tracking-widest uppercase" x-text="record.subject"></span>
+                                    <span class="text-xs font-bold text-slate-400" x-text="'單元：' + record.unit"></span>
+                                </div>
+                                <h3 class="text-3xl font-black text-slate-800 tracking-tight" x-text="record.item"></h3>
+                            </div>
+                            <div class="md:text-right w-full md:w-auto">
+                                <div class="text-2xl font-black mb-1" :class="getStatusClass(record.status)" x-text="record.status"></div>
+                                <div class="text-[10px] text-slate-300 font-black uppercase tracking-widest" x-text="'最後更新: ' + record.date"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- 老師備註：字體顏色加深加粗 -->
+                        <div x-show="record.remark" class="mt-6 p-5 bg-slate-50 rounded-3xl border border-slate-100">
+                            <p class="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-2">Teacher's Remark</p>
+                            <p class="text-slate-900 font-black text-lg leading-relaxed" x-text="record.remark"></p>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+</div>
+
+<script>
+function studentSystem() {
+    return {
+        // 更新為您的最新網址
+        gasUrl: 'https://script.google.com/macros/s/AKfycbxBmHaz8sK4R6WwQ9CtwBCjLfF5RjX828tj3paXNxo3WyCwx_-d2DIOtXxOK1njBoHvRw/exec',
+        adminPassword: '8888',
+
+        currentMode: 'exhibition',
+        isLoading: false,
+        showSettings: false,
+        
+        // 搜尋邏輯專用變數
+        searchName: '', 
+        lastSearchName: '',
+        hasSearched: false,
+        filteredResults: [],
+
+        configs: {
+            subjects: JSON.parse(localStorage.getItem('sys_sub_v16')) || ['國一數學', '國二數學', '國三數學', '社會', '自然'],
+            unitTopics: JSON.parse(localStorage.getItem('sys_unit_v16')) || ['習作', '隨堂演練', '作業簿'],
+            assignmentItems: JSON.parse(localStorage.getItem('sys_items_v16')) || ['數學講義', '隨堂演練', '基礎練習卷', '進階練習卷']
+        },
+        tempInputs: { subjects: '', unitTopics: '', assignmentItems: '' },
+        statusOptions: ['未完成', '已完成未批改', '已完成已批改未訂正', '已完成已批改已訂正'],
+        
+        allRecords: [], 
+        expandedNames: [],
+        newEntry: { name: '', subject: '', unitTopic: '', item: '', status: '未完成', remark: '' },
+
+        // 搜尋處理：必須點擊按鈕或按下 Enter
+        performSearch() {
+            const query = this.searchName.trim();
+            if (!query) {
+                alert('請先輸入學生姓名');
+                return;
+            }
+            this.isLoading = true;
+            // 短暫延遲增加互動感
+            setTimeout(() => {
+                this.filteredResults = this.allRecords.filter(r => r.name.trim() === query);
+                this.lastSearchName = query;
+                this.hasSearched = true;
+                this.isLoading = false;
+            }, 400);
+        },
+
+        enterAdmin() {
+            const pw = prompt('請輸入管理員密碼：');
+            if (pw === this.adminPassword) {
+                this.currentMode = 'admin';
+                this.resetSearch();
+            } else if (pw !== null) {
+                alert('密碼錯誤！');
+            }
+        },
+
+        exitAdmin() {
+            this.currentMode = 'exhibition';
+            this.resetSearch();
+        },
+
+        resetSearch() {
+            this.searchName = '';
+            this.filteredResults = [];
+            this.hasSearched = false;
+        },
+
+        async fetchData() {
+            this.isLoading = true;
+            try {
+                const response = await fetch(`${this.gasUrl}?t=${Date.now()}`);
+                const data = await response.json();
+                this.allRecords = data.map((item, index) => ({ ...item, id: index }));
+                
+                // 如果在展示模式且正在查看結果，同步更新
+                if (this.currentMode === 'exhibition' && this.hasSearched) {
+                    this.filteredResults = this.allRecords.filter(r => r.name.trim() === this.lastSearchName);
+                }
+            } catch (e) { 
+                console.error('Fetch Error:', e); 
+            }
+            this.isLoading = false;
+        },
+
+        async sendData(action, recordData = null) {
+            this.isLoading = true;
+            let payload = (action === 'add') ? 
+                { action: 'add', ...this.newEntry, unit: this.newEntry.unitTopic } : 
+                { action, ...recordData };
+
+            try {
+                await fetch(this.gasUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
+                if (action === 'add') {
+                    this.newEntry.unitTopic = ''; this.newEntry.item = ''; this.newEntry.remark = '';
+                }
+                setTimeout(() => this.fetchData(), 1200);
+            } catch (e) {
+                alert('通訊失敗，請檢查網路。');
+                this.isLoading = false;
+            }
+        },
+
+        getStatusClass(status) {
+            const s = status ? status.trim() : '';
+            if (s === '已完成已批改已訂正') return 'text-emerald-500';
+            if (s === '已完成已批改未訂正') return 'text-amber-500';
+            if (s === '已完成未批改') return 'text-blue-500';
+            return 'text-rose-500';
+        },
+
+        getStatusBorder(status) {
+            const s = status ? status.trim() : '';
+            if (s === '已完成已批改已訂正') return 'border-emerald-500 shadow-emerald-50';
+            if (s === '已完成已批改未訂正') return 'border-amber-500 shadow-amber-50';
+            if (s === '已完成未批改') return 'border-blue-500 shadow-blue-50';
+            return 'border-rose-500 shadow-rose-50';
+        },
+
+        confirmDelete(record) {
+            if (confirm(`確定要刪除「${record.name}」的這項作業紀錄嗎？`)) {
+                this.sendData('delete', record);
+            }
+        },
+
+        get groupedStudents() {
+            return this.allRecords.reduce((groups, record) => {
+                if (!groups[record.name]) groups[record.name] = { records: [] };
+                groups[record.name].records.push(record);
+                return groups;
+            }, {});
+        },
+
+        toggleStudent(name) {
+            this.expandedNames = this.expandedNames.includes(name) ? 
+                this.expandedNames.filter(n => n !== name) : [...this.expandedNames, name];
+        },
+
+        addConfig(type) {
+            if (this.tempInputs[type]) {
+                this.configs[type].push(this.tempInputs[type].trim());
+                this.tempInputs[type] = '';
+                this.saveConfig();
+            }
+        },
+        removeConfig(type, index) {
+            this.configs[type].splice(index, 1);
+            this.saveConfig();
+        },
+        saveConfig() {
+            localStorage.setItem('sys_sub_v16', JSON.stringify(this.configs.subjects));
+            localStorage.setItem('sys_unit_v16', JSON.stringify(this.configs.unitTopics));
+            localStorage.setItem('sys_items_v16', JSON.stringify(this.configs.assignmentItems));
+        }
+    }
+}
+</script>
+
+</body>
+</html>
